@@ -47,3 +47,7 @@ terraform.rc
 
 # Task
 **/.task/
+
+# IDEs
+.vscode/
+.idea/
