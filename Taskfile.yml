@@ -1,0 +1,129 @@
+version: '3'
+
+silent: true
+
+tasks:
+  default:
+    cmds:
+      - echo "Cloud Engineering - Assessment 1"
+#===================================================================================================
+  init:
+    desc: Initialize the Terraform working directory
+    cmds:
+      - terraform init
+#===================================================================================================
+  validate:
+    desc: Check whether the configuration is valid
+    cmds:
+      - terraform validate
+      - echo ""
+      - terraform graph -draw-cycles
+      - echo ""
+#===================================================================================================
+  deploy:
+    desc: Deploy the infrastructure resources
+    deps: [validate]
+    prompt: Do you want to continue the deployment of infrastructure resources?
+    cmds:
+      - terraform plan -compact-warnings -out=tfplan
+      - echo ""
+      - terraform apply -auto-approve -compact-warnings tfplan
+      - echo ""
+      - terraform state list
+      - echo ""
+      - task: info-ip
+#===================================================================================================
+  destroy:
+    desc: Destroy the infrastructure resources
+    deps: [validate]
+    prompt: Do you want to continue the destruction of infrastructure resources?
+    cmds:
+      - terraform plan -destroy -compact-warnings
+      - echo ""
+      - terraform destroy -auto-approve -compact-warnings
+#===================================================================================================
+  outputs:
+    desc: Show the outputs of the Terraform configuration
+    cmds:
+      - terraform output
+#===================================================================================================
+  info:
+    desc: Show the information of the Terraform configuration
+    cmds:
+      - terraform show
+      - echo ""
+      - terraform state list
+#===================================================================================================
+  info-ip:
+    desc: Show the public and private IP addresses of the VMs
+    summary: |
+      Show the public and private IP addresses of the VMs.
+
+      Usage:
+        $ task info-ip
+        $ RG=resource_group task info-ip
+    vars:
+      RG: 'at1-rg'
+    cmds:
+      - az vm list-ip-addresses --resource-group "{{.RG}}" --output table
+#===================================================================================================
+  refresh:
+    desc: Update the state file with the real infrastructure
+    cmds:
+      - terraform refresh -compact-warnings
+#===================================================================================================
+  run-pwshscript-*-*-*:
+    desc: Run a Local PowerShell Script Content in VM
+    summary: |
+      Run a Local PowerShell Script Content in VM.
+
+      Usage:
+        $ task run-pwshscript-'resource_group'-'vm_name'-'/path/to/script.ps1'
+        $ task run-pwshscript-'my-rg'-'myvm'-'/path/to/script.ps1'
+    platforms: [windows]
+    vars:
+      ARG_1: '{{index .MATCH 0}}'
+      ARG_2: '{{index .MATCH 1}}'
+      ARG_3: '{{index .MATCH 2}}'
+    cmds:
+      - |
+        pwsh -Command '
+        $scriptContent = Get-Content "{{.ARG_3}}" -Raw
+        az vm run-command invoke `
+          --resource-group "{{.ARG_1}}" `
+          --name "{{.ARG_2}}" `
+          --command-id RunPowerShellScript `
+          --scripts $scriptContent
+        '
+#===================================================================================================
+  run-cmd:
+    desc: Run a Shell (PowerShell or Bash) Command in VM.
+    summary: |
+      Run a Shell (PowerShell or Bash) Command in VM.
+
+      The default command id (CMD_ID) is RunPowerShellScript.
+
+      Usage:
+        $ VM_NAME=<vm_name> RG=<rsc_grp> CMD_ID=<RunPowerShellScript|RunShellScript> task run-cmd -- <command>
+        $ VM_NAME=mywindowsvm task run-cmd -- Get-Command notepad
+        $ VM_NAME=mylinuxvm CMD_ID=RunShellScript task run-cmd -- whoami
+
+      Environment Variables:
+        - RG: The resource group of the VM (default: 'at1-rg')
+        - CMD_ID: The command id to run (default: 'RunPowerShellScript')
+        - VM_NAME: The name of the VM
+    env:
+      RG: 'at1-rg'
+      CMD_ID: 'RunPowerShellScript'
+      VM_NAME: ''
+    cmds:
+      - pwsh -Command "(az vm run-command invoke --resource-group \"$RG\" --name \"$VM_NAME\" --command-id \"$CMD_ID\" --scripts '{{.CLI_ARGS}}' | ConvertFrom-Json).value[0].message"
+#===================================================================================================
+  clean:
+    desc: Clean the working directory
+    cmds:
+      - rm -rf .terraform
+      - rm -f tfplan
+      - rm -f *.tfstate*
+      - rm -f .terraform.lock.hcl
+#===================================================================================================
